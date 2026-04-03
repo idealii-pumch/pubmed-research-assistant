@@ -1,18 +1,57 @@
-# PubMed Research Assistant
+# 🧬 PubMed Research Assistant
 
-一个面向文献检索与筛选的轻量级 Skill：  
-从主题到检索策略确认，再到筛选、排序和本地 HTML 阅读清单导出。
+> 一个给科研人员使用的 PubMed 文献助手。  
+> 你只需要在 IDE 里“聊天提需求”，就可以完成检索策略优化、筛选、排序和本地 HTML 阅读清单导出。
 
-## 核心能力
+---
 
-- 交互式完善 PubMed 检索式（主题词、同义词、布尔逻辑）
-- 可配置筛选条件：发表时间、影响因子、分区
-- 多策略排序：`date` / `if` / `keyword` / `hybrid`
-- 导出结果：
-  - `*_ranked.xlsx`
-  - `*_reading_list.html`（支持关键词高亮、书签侧栏、已读/星标、夜间模式）
+## ✨ 这个 Skill 能做什么
 
-## 目录结构
+- 🔎 根据你的研究主题，帮你完善 PubMed 检索式
+- 🧭 和你反复确认筛选条件（时间、分区、影响因子）
+- 📊 按你指定规则排序（发表时间、影响因子、关键词命中频次）
+- 🌙 导出可阅读 HTML（关键词高亮、书签侧栏、已读/星标、日夜模式）
+
+## 👩‍🔬 适合谁
+
+- 研究生、医生、科研助理，无论你是否有编程经验
+- 想通过“对话”快速得到可读文献清单的人
+
+---
+
+## 🚀 零基础快速开始（只用对话）
+
+1. 在 IDE 中打开本项目。
+2. 在对话框直接说你的研究主题，例如：
+   - `我想研究 BNIP3/NIX 和 LC3 的互作机制`
+3. 助手会给出 2 到 3 套检索策略，请你选择或修改。
+4. 助手会继续询问筛选条件，请直接用自然语言回答：
+   - 时间范围（如“近10年”）
+   - 分区（如“1区”）
+   - 影响因子（如“IF>=10”）
+   - 排序方式（如“按关键词命中排序”）
+5. 你确认后，助手会自动执行并在本地生成结果。
+6. 结果会保存在 `abstract/` 下新目录，包含：
+   - `*_ranked.xlsx`：筛选 + 排序后的表格
+   - `*_reading_list.html`：可直接阅读和标记的网页
+
+---
+
+## 💬 可直接复制的对话模板
+
+- `我想研究【主题】，先给我两个检索策略，一个严格一个宽松。`
+- `用严格版，筛选近10年，1区，IF>=10。`
+- `排序按关键词命中优先，其次按发表时间。`
+- `开始执行，并把结果保存到 abstract 新目录。`
+
+---
+
+## 📁 输出文件说明
+
+- `*_ranked.xlsx`：用于后续统计、二次筛选
+- `*_reading_list.html`：用于精读（支持星标、已读勾选、夜间模式）
+
+## 🧱 技能目录结构
 
 ```text
 pubmed-research-assistant/
@@ -22,31 +61,12 @@ pubmed-research-assistant/
    └─ pubmed_postprocess.py
 ```
 
-## 快速开始
+## 💡 小提示
 
-1. 先通过你现有流程生成 PubMed 原始 `xlsx`（如 `abstract/xxx.xlsx`）。
-2. 运行后处理脚本：
+- 不确定怎么说时，直接用口语描述需求即可。
+- 如果结果太多，可以说：`把检索再收敛一点`。
+- 如果结果太少，可以说：`放宽条件，再来一版`。
 
-```powershell
-.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_postprocess.py `
-  --input "abstract\xxx.xlsx" `
-  --keywords "bnip3,nix,lc3" `
-  --years-back 10 `
-  --max-csa-quartile 1 `
-  --sort-by keyword `
-  --top-n 150
-```
+---
 
-## 主要参数
-
-- `--input`：输入 `xlsx`
-- `--keywords`：逗号分隔关键词（用于命中统计与高亮）
-- `--years-back` / `--start-date` / `--end-date`：时间筛选
-- `--min-if`：最低影响因子
-- `--max-csa-quartile`：最高分区阈值（1 为最优）
-- `--sort-by`：排序模式
-
-## 输出位置
-
-- 默认保存到：`abstract/<topic>_<timestamp>/`
-- 也可通过 `--output-dir` 指定路径
+祝你检索顺利，读文献更高效 📚
