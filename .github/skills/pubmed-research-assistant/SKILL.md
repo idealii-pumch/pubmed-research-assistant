@@ -1,60 +1,89 @@
 ---
 name: pubmed-research-assistant
-description: Use when the user wants end-to-end PubMed literature retrieval and review from a topic idea, including iterative query refinement, interactive filter confirmation (publication time, quartile, impact factor), custom ranking (date/IF/keyword hit frequency), HTML abstract export.
+description: Plan and execute PubMed literature discovery from an initial research idea through final reading outputs. Use when the user is still shaping a topic, needs help turning a vague biological or medical question into searchable PubMed queries, wants interactive query refinement and filter confirmation, or wants to run a local PubMed retrieval, ranking, and HTML reading-list workflow from either a final query string or an existing PubMed Excel export.
 ---
 
-## Runbook
-1. Clarify topic and objective in one sentence.
-2. Propose 2 to 3 candidate PubMed query strings using Boolean logic, synonyms, and field tags.
-3. Ask user to confirm or modify query strategy; iterate until final query is approved.
-4. Confirm filters interactively:
-- publication time range (`years_back` or explicit start/end date)
-- `CSA_Quartile` threshold
-- impact factor threshold
-- article type constraints if needed
-5. Execute existing PubMed pipeline first (reuse local tool/notebook):
-- `tools/Pubmed_qeury.ipynb`
-- produce `.xlsx` with columns like `Title`, `Abstract`, `publish_date`, `IF`, `CSA_Quartile`
-6. Run post-process script to filter, rank, and export HTML reading list.
+# PubMed Research Assistant
 
-## Query Strategy Rules
-- Expand core concept with synonyms, abbreviations, and mechanism/outcome terms.
-- Prefer explicit field tags for precision when useful:
-- `"[Title/Abstract]"`, `"[MeSH Terms]"`, `"[Publication Type]"`, `"[Date - Publication]"`
-- Keep one strict query and one broad query for iteration.
-- Show user the exact final query before running retrieval.
+Drive the workflow from research intent to readable outputs. Do not assume the user already has a downloaded PubMed table.
 
-## Filter Confirmation Template
-Use this exact structure when asking for confirmation:
-1. Topic and scope
-2. Final query string
-3. Time filter
-4. Quartile/IF filter
-5. Result cap and sorting mode
+## Start From The Research Question
+1. Convert the user's rough idea into a one-sentence research objective.
+2. If the topic is still vague, offer a compact ideation frame:
+- biological process or disease context
+- target genes, pathways, cell types, or interventions
+- mechanism, biomarker, method, or translational angle
+- species, tissue, model, or assay constraints
+3. Propose 2 or 3 PubMed query candidates:
+- one strict and precise
+- one broader recall-oriented
+- one optional mechanism-focused version if useful
+4. Explain the tradeoff of each query in one sentence.
+5. Ask the user to confirm or edit the final query before execution.
 
-## Ranking and Export
-Run:
+## Confirm Execution Settings
+Confirm these items in one compact block before running anything:
+1. Topic label for filenames
+2. Final PubMed query string
+3. Time scope
+4. Publication type
+5. IF or quartile constraints if the user wants them
+6. Ranking mode and top-N cap
+
+If the user has no preference, use these defaults:
+- publication type: `Journal Article`
+- ranking: `hybrid`
+- weights: date `0.4`, IF `0.3`, keyword `0.3`
+- top-N: `150`
+
+## Execution Paths
+Choose one path explicitly.
+
+### Path A: Start From Topic Or Final Query
+Use the pipeline script when the user wants the full workflow without first producing a local xlsx.
+
+```powershell
+.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_topic_pipeline.py `
+  --topic "mitophagy crosstalk in septic cardiomyopathy" `
+  --query "(mitophagy[Title/Abstract] OR mitochondrial autophagy[Title/Abstract]) AND (septic cardiomyopathy[Title/Abstract] OR sepsis-induced cardiac dysfunction[Title/Abstract])" `
+  --keywords "mitophagy,septic cardiomyopathy,cardiac dysfunction" `
+  --years-back 10 `
+  --paper-type "Journal Article" `
+  --max-csa-quartile 1 `
+  --min-if 10 `
+  --sort-by hybrid
+```
+
+Use `--jcr-path` when the machine does not have the default JCR/CSA table at `E:\Python\GrabPubmed\JCR_CSA_2025.xlsx`.
+
+### Path B: Start From An Existing PubMed Excel File
+Use the post-process script when the retrieval step already exists and only filtering, ranking, or HTML export is needed.
 
 ```powershell
 .\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_postprocess.py `
-  --input "abstract\xxx.xlsx" `
-  --keywords "keyword1,keyword2" `
-  --years-back 5 `
+  --input "abstract\example.xlsx" `
+  --keywords "mitophagy,sepsis,cardiomyocyte" `
+  --years-back 10 `
   --max-csa-quartile 1 `
   --min-if 10 `
-  --sort-by hybrid `
-  --w-date 0.4 --w-if 0.3 --w-keyword 0.3
+  --sort-by hybrid
 ```
 
-Sort modes:
-- `date`: publish date
-- `if`: impact factor
-- `keyword`: search-term hit frequency in title+abstract
-- `hybrid`: weighted composite of date + IF + keyword hit
+## Output Rules
+Always report exact output paths for:
+- raw fetched xlsx when Path A is used
+- ranked xlsx
+- HTML reading list
 
-## Outputs
-The script generates:
-- filtered ranked table: `*_ranked.xlsx`
-- HTML abstract reading list: `*_reading_list.html`
+Prefer saving into `abstract/` unless the user asks for a different location.
 
-Always save outputs locally and report exact paths.
+## Good Prompt Starters
+Offer or accept prompts like these:
+- `Use $pubmed-research-assistant to turn my idea into two PubMed search strategies.`
+- `Use $pubmed-research-assistant to narrow this topic and then run the full pipeline.`
+- `Use $pubmed-research-assistant to re-rank my existing PubMed xlsx by keyword and date.`
+
+## Failure Handling
+- If IF or quartile data is unavailable, continue without those filters and say so explicitly.
+- If the query is too broad, suggest one narrower revision before running again.
+- If the result count is too small, broaden synonyms or relax one filter at a time.

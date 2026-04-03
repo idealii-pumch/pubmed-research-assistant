@@ -26,7 +26,6 @@ COL_ALIASES = {
 }
 
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Filter and rank PubMed results, then export HTML")
     parser.add_argument("--input", required=True, help="Input xlsx path from PubMed pipeline")
@@ -43,6 +42,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-keyword", type=float, default=0.3, help="Weight for keyword hit score in hybrid mode")
     parser.add_argument("--top-n", type=int, default=150, help="Max number of records after ranking")
     return parser.parse_args()
+
+
+def resolve_output_paths(input_path: Path, output_dir: str = "") -> tuple[Path, Path, Path]:
+    base = input_path.stem
+    if output_dir:
+        out_dir = Path(output_dir).expanduser().resolve()
+    else:
+        abstract_root = Path.cwd() / "abstract"
+        abstract_root.mkdir(parents=True, exist_ok=True)
+        run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_base = re.sub(r"[^A-Za-z0-9_-]+", "_", base).strip("_") or "pubmed"
+        out_dir = abstract_root / f"{safe_base}_{run_tag}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir, out_dir / f"{base}_ranked.xlsx", out_dir / f"{base}_reading_list.html"
 
 
 def pick_col(df: pd.DataFrame, logical_name: str) -> str | None:
@@ -190,7 +203,7 @@ body.sidebar-closed {{ padding-left: 0; }}
 .icon-btn {{ border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 10px; cursor: pointer; }}
 .sidebar-toggle {{ position: fixed; left: 292px; top: 12px; z-index: 30; }}
 .sidebar-toggle.sidebar-hidden {{ left: 12px; }}
-.container {{ max-width: 1080px; margin: 0 auto; padding: 16px; }}
+.container {{ max-width: 1080px; margin: 0 auto; padding: 16px; }}
 .paper {{ position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }}
 .paper h3 {{ margin: 0 90px 8px 0; }}
 .paper-actions {{ position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }}
@@ -212,7 +225,7 @@ mark.kw {{ background: var(--kw-bg); color: var(--kw-text); border-radius: 3px; 
   <div class='sidebar-controls'>
     <button class='icon-btn' onclick='toggleTheme()' id='theme-btn'>🌙 Dark</button>
   </div>
-  <ul>
+  <ul>
     {''.join(sidebar_links)}
   </ul>
 </aside>
@@ -306,53 +319,53 @@ window.addEventListener('DOMContentLoaded', () => {{
     out_html.write_text(html_content, encoding="utf-8")
 
 
-def main() -> None:
-    args = parse_args()
-    in_path = Path(args.input).expanduser().resolve()
+def process_pubmed_excel(
+    input_path: str | Path,
+    keywords_text: str,
+    output_dir: str = "",
+    years_back: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    min_if: float | None = None,
+    max_csa_quartile: int | None = None,
+    sort_by: str = "hybrid",
+    w_date: float = 0.4,
+    w_if: float = 0.3,
+    w_keyword: float = 0.3,
+    top_n: int = 150,
+) -> tuple[Path, Path]:
+    in_path = Path(input_path).expanduser().resolve()
     if not in_path.exists():
         raise FileNotFoundError(f"Input not found: {in_path}")
 
-    base = in_path.stem
-    if args.output_dir:
-        out_dir = Path(args.output_dir).expanduser().resolve()
-    else:
-        abstract_root = Path.cwd() / "abstract"
-        abstract_root.mkdir(parents=True, exist_ok=True)
-        run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_base = re.sub(r"[^A-Za-z0-9_-]+", "_", base).strip("_") or "pubmed"
-        out_dir = abstract_root / f"{safe_base}_{run_tag}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    out_xlsx = out_dir / f"{base}_ranked.xlsx"
-    out_html = out_dir / f"{base}_reading_list.html"
-
+    _, out_xlsx, out_html = resolve_output_paths(in_path, output_dir)
     df = pd.read_excel(in_path)
 
     cols = {k: pick_col(df, k) for k in COL_ALIASES}
     if not cols["title"] or not cols["abstract"]:
         raise ValueError("Missing required columns: Title/Abstract")
 
-    keywords = parse_keywords(args.keywords)
+    keywords = parse_keywords(keywords_text)
     if not keywords:
         raise ValueError("No valid keywords from --keywords")
 
     if cols["date"]:
         df["_date"] = parse_pub_date_series(df[cols["date"]])
-        if args.years_back is not None:
-            cutoff = pd.Timestamp(datetime.today()) - pd.DateOffset(years=args.years_back)
+        if years_back is not None:
+            cutoff = pd.Timestamp(datetime.today()) - pd.DateOffset(years=years_back)
             df = df[df["_date"] >= cutoff]
-        if args.start_date:
-            df = df[df["_date"] >= pd.to_datetime(args.start_date)]
-        if args.end_date:
-            df = df[df["_date"] <= pd.to_datetime(args.end_date)]
+        if start_date:
+            df = df[df["_date"] >= pd.to_datetime(start_date)]
+        if end_date:
+            df = df[df["_date"] <= pd.to_datetime(end_date)]
     else:
         df["_date"] = pd.NaT
 
-    if args.min_if is not None and cols["if"]:
-        df = df[pd.to_numeric(df[cols["if"]], errors="coerce") >= args.min_if]
+    if min_if is not None and cols["if"]:
+        df = df[pd.to_numeric(df[cols["if"]], errors="coerce") >= min_if]
 
-    if args.max_csa_quartile is not None and cols["quartile"]:
-        df = df[pd.to_numeric(df[cols["quartile"]], errors="coerce") <= args.max_csa_quartile]
+    if max_csa_quartile is not None and cols["quartile"]:
+        df = df[pd.to_numeric(df[cols["quartile"]], errors="coerce") <= max_csa_quartile]
 
     df = df.copy()
     df["title_keyword_hits"] = df[cols["title"]].astype(str).map(lambda t: count_hits(t, keywords))
@@ -362,47 +375,58 @@ def main() -> None:
     df["_date_ord"] = pd.to_datetime(df["_date"], errors="coerce").map(lambda x: x.toordinal() if pd.notna(x) else 0)
     df["_if_num"] = pd.to_numeric(df[cols["if"]], errors="coerce") if cols["if"] else 0
 
-    if args.sort_by == "date":
+    if sort_by == "date":
         df = df.sort_values(["_date_ord", "keyword_hits"], ascending=[False, False])
-    elif args.sort_by == "if":
+    elif sort_by == "if":
         df = df.sort_values(["_if_num", "keyword_hits", "_date_ord"], ascending=[False, False, False])
-    elif args.sort_by == "keyword":
+    elif sort_by == "keyword":
         df = df.sort_values(["keyword_hits", "_if_num", "_date_ord"], ascending=[False, False, False])
     else:
-        wsum = args.w_date + args.w_if + args.w_keyword
+        wsum = w_date + w_if + w_keyword
         if wsum <= 0:
             raise ValueError("Hybrid weights must sum to > 0")
-        wd, wi, wk = args.w_date / wsum, args.w_if / wsum, args.w_keyword / wsum
+        wd, wi, wk = w_date / wsum, w_if / wsum, w_keyword / wsum
         df["_score"] = wd * normalize(df["_date_ord"]) + wi * normalize(df["_if_num"]) + wk * normalize(df["keyword_hits"])
         df = df.sort_values(["_score", "keyword_hits"], ascending=[False, False])
 
-    if args.top_n and args.top_n > 0:
-        df = df.head(args.top_n)
+    if top_n and top_n > 0:
+        df = df.head(top_n)
 
     df.to_excel(out_xlsx, index=False)
 
     query_info = {
-        "sort_by": args.sort_by,
-        "years_back": args.years_back,
-        "start_date": args.start_date,
-        "end_date": args.end_date,
-        "min_if": args.min_if,
-        "max_csa_quartile": args.max_csa_quartile,
-        "weights": {"date": args.w_date, "if": args.w_if, "keyword": args.w_keyword},
+        "sort_by": sort_by,
+        "years_back": years_back,
+        "start_date": start_date,
+        "end_date": end_date,
+        "min_if": min_if,
+        "max_csa_quartile": max_csa_quartile,
+        "weights": {"date": w_date, "if": w_if, "keyword": w_keyword},
     }
-
     render_html(df, out_html, keywords, query_info, cols)
+    return out_xlsx, out_html
 
 
+def main() -> None:
+    args = parse_args()
+    out_xlsx, out_html = process_pubmed_excel(
+        input_path=args.input,
+        keywords_text=args.keywords,
+        output_dir=args.output_dir,
+        years_back=args.years_back,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        min_if=args.min_if,
+        max_csa_quartile=args.max_csa_quartile,
+        sort_by=args.sort_by,
+        w_date=args.w_date,
+        w_if=args.w_if,
+        w_keyword=args.w_keyword,
+        top_n=args.top_n,
+    )
     print(f"Saved ranked xlsx: {out_xlsx}")
     print(f"Saved html: {out_html}")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-

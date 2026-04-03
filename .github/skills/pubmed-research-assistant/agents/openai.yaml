@@ -1,0 +1,4 @@
+interface:
+  display_name: "PubMed Research Assistant"
+  short_description: "Turn a topic idea into a PubMed reading workflow"
+  default_prompt: "Use $pubmed-research-assistant to turn my topic into PubMed queries and, after confirmation, run the local retrieval workflow."

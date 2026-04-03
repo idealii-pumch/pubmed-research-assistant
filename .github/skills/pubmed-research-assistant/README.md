@@ -1,72 +1,107 @@
-# 🧬 PubMed Research Assistant
+# PubMed Research Assistant
 
-> 一个给科研人员使用的 PubMed 文献助手。  
-> 你只需要在 IDE 里“聊天提需求”，就可以完成检索策略优化、筛选、排序和本地 HTML 阅读清单导出。
+这个 skill 现在支持两种起点：
 
----
+1. 从一个模糊研究想法开始，先帮你收敛主题并生成 PubMed 检索式。
+2. 从已有的 PubMed `xlsx` 开始，只做筛选、排序和 HTML 阅读清单导出。
 
-## ✨ 这个 Skill 能做什么
+它不再要求你必须先准备好本地下载结果。
 
-- 🔎 根据你的研究主题，帮你完善 PubMed 检索式
-- 🧭 和你反复确认筛选条件（时间、分区、影响因子）
-- 📊 按你指定规则排序（发表时间、影响因子、关键词命中频次）
-- 🌙 导出可阅读 HTML（关键词高亮、书签侧栏、已读/星标、日夜模式）
+## 安装后怎么调用
 
-## 👩‍🔬 适合谁
+如果 skill 已被安装并能被 Codex 发现，最直接的说法就是：
 
-- 研究生、医生、科研助理，无论你是否有编程经验
-- 想通过“对话”快速得到可读文献清单的人
+- `Use $pubmed-research-assistant to turn my topic into two PubMed queries.`
+- `Use $pubmed-research-assistant to refine this idea and run the full PubMed pipeline.`
+- `Use $pubmed-research-assistant to rank my existing PubMed xlsx by keyword and date.`
 
----
+也可以直接用中文：
 
-## 🚀 零基础快速开始（只用对话）
+- `用 pubmed-research-assistant 帮我把这个课题想法收敛成两个 PubMed 检索式。`
+- `用 pubmed-research-assistant 从主题构思开始，确认后直接跑完整检索流程。`
+- `用 pubmed-research-assistant 处理我现有的 xlsx，导出 html 阅读列表。`
 
-1. 在 IDE 中打开本项目。
-2. 在对话框直接说你的研究主题，例如：
-   - `我想研究 BNIP3/NIX 和 LC3 的互作机制`
-3. 助手会给出 2 到 3 套检索策略，请你选择或修改。
-4. 助手会继续询问筛选条件，请直接用自然语言回答：
-   - 时间范围（如“近10年”）
-   - 分区（如“1区”）
-   - 影响因子（如“IF>=10”）
-   - 排序方式（如“按关键词命中排序”）
-5. 你确认后，助手会自动执行并在本地生成结果。
-6. 结果会保存在 `abstract/` 下新目录，包含：
-   - `*_ranked.xlsx`：筛选 + 排序后的表格
-   - `*_reading_list.html`：可直接阅读和标记的网页
+## 推荐对话流程
 
----
+### 场景 1：从研究主题开始
 
-## 💬 可直接复制的对话模板
+可以直接说：
 
-- `我想研究【主题】，先给我两个检索策略，一个严格一个宽松。`
-- `用严格版，筛选近10年，1区，IF>=10。`
-- `排序按关键词命中优先，其次按发表时间。`
-- `开始执行，并把结果保存到 abstract 新目录。`
+```text
+我想研究脓毒症心肌病里的线粒体自噬机制，先帮我拆成两个 PubMed 检索策略，一个严格，一个宽松。
+```
 
----
+然后继续补充：
 
-## 📁 输出文件说明
+```text
+用严格版，近 10 年，Journal Article，优先 1 区和 IF>=10，最后按关键词命中和时间综合排序。
+```
 
-- `*_ranked.xlsx`：用于后续统计、二次筛选
-- `*_reading_list.html`：用于精读（支持星标、已读勾选、夜间模式）
+### 场景 2：我已经有 PubMed 导出的 xlsx
 
-## 🧱 技能目录结构
+```text
+用 pubmed-research-assistant 处理 abstract/example.xlsx，关键词用 mitophagy,sepsis,cardiomyocyte，近 10 年，导出 html。
+```
+
+## 现在有哪些脚本
+
+### 1. 从最终检索式直接抓取并产出阅读清单
+
+这个脚本把原来 notebook 里的抓取逻辑抽出来了，安装 skill 后更容易直接调用。
+
+```powershell
+.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_topic_pipeline.py `
+  --topic "mitophagy in septic cardiomyopathy" `
+  --query "(mitophagy[Title/Abstract] OR mitochondrial autophagy[Title/Abstract]) AND (septic cardiomyopathy[Title/Abstract] OR sepsis-induced cardiac dysfunction[Title/Abstract])" `
+  --keywords "mitophagy,septic cardiomyopathy,cardiac dysfunction" `
+  --years-back 10 `
+  --paper-type "Journal Article" `
+  --max-csa-quartile 1 `
+  --min-if 10 `
+  --sort-by hybrid
+```
+
+输出包括：
+
+- 原始抓取结果 `raw xlsx`
+- 排序后的 `*_ranked.xlsx`
+- 可阅读的 `*_reading_list.html`
+
+说明：
+
+- 如果环境变量里有 `NCBI_API_KEY` 或 `PUBMED_API_KEY`，脚本会自动读取。
+- 如果本机没有 `E:\Python\GrabPubmed\JCR_CSA_2025.xlsx`，可以手动传 `--jcr-path`。
+- 没有 JCR 表时，脚本会跳过 IF/分区注释，而不是直接失败。
+
+### 2. 对已有 xlsx 做后处理
+
+```powershell
+.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_postprocess.py `
+  --input "abstract\example.xlsx" `
+  --keywords "mitophagy,sepsis,cardiomyocyte" `
+  --years-back 10 `
+  --max-csa-quartile 1 `
+  --min-if 10 `
+  --sort-by hybrid
+```
+
+## 改进点
+
+- 把“必须先有本地 xlsx”改成“可以从研究问题开始”。
+- 把 notebook 里的检索步骤变成了可执行脚本。
+- 让 `pubmed_postprocess.py` 同时支持命令行和被其他脚本复用。
+- 给 skill 增加了更明确的触发语和调用入口。
+- 对缺少 JCR/CSA 文件的环境做了更温和的降级处理。
+
+## 目录
 
 ```text
 pubmed-research-assistant/
-├─ SKILL.md
+├─ agents/
+│  └─ openai.yaml
 ├─ README.md
+├─ SKILL.md
 └─ scripts/
-   └─ pubmed_postprocess.py
+   ├─ pubmed_postprocess.py
+   └─ pubmed_topic_pipeline.py
 ```
-
-## 💡 小提示
-
-- 不确定怎么说时，直接用口语描述需求即可。
-- 如果结果太多，可以说：`把检索再收敛一点`。
-- 如果结果太少，可以说：`放宽条件，再来一版`。
-
----
-
-祝你检索顺利，读文献更高效 📚
