@@ -33,24 +33,40 @@ If no API key is provided, the tool will work but may be subject to rate limits.
 4. Explain the tradeoff of each query in one sentence.
 5. Ask the user to confirm or edit the final query before execution.
 
+During this phase, explicitly ask and confirm:
+- use MeSH-focused query or general Title/Abstract query
+- AND/OR/NOT logic check and whether exclusions are too aggressive
+- time scope: all years, recent N years (for example 5 or 10 years), or fixed range (for example 2016-05-01 to now/至今)
+
 ## Confirm Execution Settings
 Confirm these items in one compact block before running anything:
 1. Topic label for filenames
 2. Final PubMed query string
-3. Output directory (default: abstract/)
-4. File naming prefix (derived from topic if not specified)
+3. Output directory root (default: `abstract/`)
+4. Run directory name (ask user first; default: query/topic slug)
 5. Time scope
 6. Publication type
 7. IF or quartile constraints if the user wants them
 8. JCR/CSA table path (optional, for IF and quartile annotation)
 9. Ranking mode and top-N cap
+10. Ranking order choice from these options:
+- date descending
+- date ascending
+- keyword hits descending
+- IF descending
 
 If the user has no preference, use these defaults:
 - output directory: `abstract/`
 - publication type: `Journal Article`
-- ranking: `hybrid`
+- ranking: `date_desc`
 - weights: date `0.4`, IF `0.3`, keyword `0.3`
 - top-N: `150`
+- run directory name: slugified query/topic
+
+Before fetching details, perform a count check using PubMed ESearch:
+- if estimated count is over 200, warn that retrieval may be slow
+- ask whether to refine query first
+- only continue when user explicitly confirms continuation
 
 ## Execution Paths
 Choose one path explicitly.
@@ -59,44 +75,56 @@ Choose one path explicitly.
 Use the pipeline script when the user wants the full workflow without first producing a local xlsx.
 
 ```powershell
-.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_topic_pipeline.py `
+.\.venv\Scripts\python.exe scripts/pubmed_topic_pipeline.py `
   --topic "mitophagy crosstalk in septic cardiomyopathy" `
   --query "(mitophagy[Title/Abstract] OR mitochondrial autophagy[Title/Abstract]) AND (septic cardiomyopathy[Title/Abstract] OR sepsis-induced cardiac dysfunction[Title/Abstract])" `
   --keywords "mitophagy,septic cardiomyopathy,cardiac dysfunction" `
-  --output-dir "abstract/mitophagy_sepsis" `
+  --output-dir "abstract" `
+  --run-dir-name "mitophagy_sepsis" `
   --years-back 10 `
   --paper-type "Journal Article" `
   --max-csa-quartile 1 `
   --min-if 10 `
   --jcr-path "path/to/JCR_CSA_2025.xlsx" `
-  --sort-by hybrid
+  --sort-by if_desc
 ```
 
-If JCR path is not provided, IF/quartile annotation will be skipped.
+If JCR path is not provided, try default `references\JCR_CSA_2025.xlsx` first; if unavailable, IF/quartile annotation will be skipped.
+
+Path A output contract:
+- always create a recursive run directory: `<output-dir>/<run-dir-name>/<timestamp>/`
+- table 1: raw query result xlsx, unfiltered
+- table 2: filtered and ranked xlsx
+- plus one HTML reading list
 
 ### Path B: Start From An Existing PubMed Excel File
 Use the post-process script when the retrieval step already exists and only filtering, ranking, or HTML export is needed.
 
 ```powershell
-.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_postprocess.py `
+.\.venv\Scripts\python.exe scripts/pubmed_postprocess.py `
   --input "abstract\example.xlsx" `
   --keywords "mitophagy,sepsis,cardiomyocyte" `
   --output-dir "abstract/mitophagy_sepsis_processed" `
   --years-back 10 `
   --max-csa-quartile 1 `
   --min-if 10 `
-  --sort-by hybrid
+  --sort-by keyword_desc
 ```
 
 If the input file does not exist, the script will fail with a clear error message.
 
 ## Output Rules
 Always report exact output paths for:
-- raw fetched xlsx when Path A is used
+- raw fetched xlsx when Path A is used (must be unfiltered)
 - ranked xlsx
 - HTML reading list
+- query log txt (auto-saved and printed to screen after retrieval)
 
 Prefer saving into `abstract/` unless the user specifies otherwise.
+
+Date reliability rule:
+- normalize publish_date from PubMed ESummary PubDate before post-processing
+- keep original date value in `raw_publish_date` for traceability
 
 ## Good Prompt Starters
 Offer or accept prompts like these:
@@ -107,6 +135,7 @@ Offer or accept prompts like these:
 ## Failure Handling
 - If API key is not set, inform the user and suggest setting NCBI_API_KEY.
 - If IF or quartile data is unavailable (no JCR path provided), continue without those filters and say so explicitly.
+- If estimated count is over 200, ask user whether to refine first; continue only after explicit confirmation.
 - If the query is too broad, suggest one narrower revision before running again.
 - If the result count is too small, broaden synonyms or relax one filter at a time.
 - If input file does not exist in Path B, provide the exact path checked and ask user to verify.

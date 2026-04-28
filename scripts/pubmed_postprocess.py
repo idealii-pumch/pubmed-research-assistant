@@ -32,11 +32,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--keywords", required=True, help="Comma-separated query keywords")
     parser.add_argument("--output-dir", default="", help="Output directory (default: abstract/<topic>_<timestamp>)")
     parser.add_argument("--years-back", type=int, default=None, help="Keep papers published in last N years")
-    parser.add_argument("--start-date", default=None, help="Start date YYYY-MM-DD")
-    parser.add_argument("--end-date", default=None, help="End date YYYY-MM-DD")
+    parser.add_argument(
+        "--start-date",
+        default=None,
+        help="Start date boundary: YYYY, YYYY-MM, YYYY-MM-DD, or natural words like today/now/至今",
+    )
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="End date boundary: YYYY, YYYY-MM, YYYY-MM-DD, or natural words like today/now/至今",
+    )
     parser.add_argument("--min-if", type=float, default=None, help="Minimum IF")
     parser.add_argument("--max-csa-quartile", type=int, default=None, help="Maximum CSA quartile (1 is best)")
-    parser.add_argument("--sort-by", choices=["date", "if", "keyword", "hybrid"], default="hybrid")
+    parser.add_argument(
+        "--sort-by",
+        choices=["date", "date_desc", "date_asc", "if", "if_desc", "keyword", "keyword_desc", "hybrid"],
+        default="hybrid",
+    )
     parser.add_argument("--w-date", type=float, default=0.4, help="Weight for date score in hybrid mode")
     parser.add_argument("--w-if", type=float, default=0.3, help="Weight for IF score in hybrid mode")
     parser.add_argument("--w-keyword", type=float, default=0.3, help="Weight for keyword hit score in hybrid mode")
@@ -46,16 +58,17 @@ def parse_args() -> argparse.Namespace:
 
 def resolve_output_paths(input_path: Path, output_dir: str = "") -> tuple[Path, Path, Path]:
     base = input_path.stem
+    output_base = base[:-10] if base.endswith("_raw_query") else base
     if output_dir:
         out_dir = Path(output_dir).expanduser().resolve()
     else:
         abstract_root = Path.cwd() / "abstract"
         abstract_root.mkdir(parents=True, exist_ok=True)
         run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_base = re.sub(r"[^A-Za-z0-9_-]+", "_", base).strip("_") or "pubmed"
+        safe_base = re.sub(r"[^A-Za-z0-9_-]+", "_", output_base).strip("_") or "pubmed"
         out_dir = abstract_root / f"{safe_base}_{run_tag}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir, out_dir / f"{base}_ranked.xlsx", out_dir / f"{base}_reading_list.html"
+    return out_dir, out_dir / f"{output_base}_ranked.xlsx", out_dir / f"{output_base}_reading_list.html"
 
 
 def pick_col(df: pd.DataFrame, logical_name: str) -> str | None:
@@ -71,12 +84,101 @@ def parse_keywords(text: str) -> list[str]:
 
 
 def parse_pub_date_series(series: pd.Series) -> pd.Series:
-    s = series.astype(str).str.strip()
-    ymd_mask = s.str.fullmatch(r"\d{8}")
-    parsed_ymd = pd.to_datetime(s.where(ymd_mask), format="%Y%m%d", errors="coerce")
-    parsed_fallback = pd.to_datetime(s.where(~ymd_mask), errors="coerce")
-    out = parsed_ymd.fillna(parsed_fallback)
-    return out
+    def parse_one(value) -> pd.Timestamp:
+        if pd.isna(value):
+            return pd.NaT
+
+        s = str(value).strip()
+        if not s:
+            return pd.NaT
+
+        low = s.lower()
+        if low in {"nan", "none", "unknown", "unkown", "not available"}:
+            return pd.NaT
+
+        s = re.sub(r"\s+", " ", s)
+        s = s.replace("–", "-").replace("—", "-")
+
+        # Common compact PubMed date form: YYYYMMDD.
+        if re.fullmatch(r"\d{8}", s):
+            return pd.to_datetime(s, format="%Y%m%d", errors="coerce")
+
+        # Normalize season words used by Medline dates.
+        season_map = {
+            "spring": "Mar",
+            "summer": "Jun",
+            "fall": "Sep",
+            "autumn": "Sep",
+            "winter": "Dec",
+        }
+        m = re.match(r"^(\d{4})\s+(spring|summer|fall|autumn|winter)(\b.*)$", s, flags=re.IGNORECASE)
+        if m:
+            year, season, tail = m.group(1), m.group(2).lower(), m.group(3)
+            s = f"{year} {season_map[season]}{tail}"
+
+        # Convert month ranges like "2009 Oct-Dec" to the first month anchor.
+        s = re.sub(
+            r"^(\d{4})\s+([A-Za-z]{3,9})-([A-Za-z]{3,9})(\b.*)$",
+            r"\1 \2\4",
+            s,
+        )
+
+        s = s.replace(".", "")
+
+        # Try deterministic formats first, then fallback parser.
+        for fmt in ("%Y %b %d", "%Y %b", "%Y %B %d", "%Y %B", "%Y"):
+            ts = pd.to_datetime(s, format=fmt, errors="coerce")
+            if pd.notna(ts):
+                return ts
+
+        return pd.to_datetime(s, errors="coerce")
+
+    return series.map(parse_one)
+
+
+def parse_filter_boundary(value: str | None, boundary: str) -> pd.Timestamp | None:
+    if not value:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if boundary not in {"start", "end"}:
+        raise ValueError(f"Unknown boundary: {boundary}")
+
+    today_tokens = {
+        "today",
+        "now",
+        "present",
+        "current",
+        "latest",
+        "to date",
+        "to-date",
+        "up to now",
+        "uptonow",
+        "至今",
+        "现在",
+        "当前",
+        "目前",
+    }
+    if text.lower() in today_tokens or text in today_tokens:
+        return pd.Timestamp.today().normalize()
+
+    if re.fullmatch(r"\d{4}", text):
+        suffix = "-01-01" if boundary == "start" else "-12-31"
+        return pd.Timestamp(f"{text}{suffix}")
+
+    if re.fullmatch(r"\d{4}-\d{2}", text):
+        period = pd.Period(text, freq="M")
+        return period.start_time.normalize() if boundary == "start" else period.end_time.normalize()
+
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        raise ValueError(
+            f"Invalid {boundary} date: {value}. Use YYYY, YYYY-MM, YYYY-MM-DD, or today/now/至今.",
+        )
+    return parsed.normalize()
 
 
 def count_hits(text: str, keywords: Iterable[str]) -> int:
@@ -349,15 +451,24 @@ def process_pubmed_excel(
     if not keywords:
         raise ValueError("No valid keywords from --keywords")
 
+    resolved_start_date = parse_filter_boundary(start_date, "start")
+    resolved_end_date = parse_filter_boundary(end_date, "end")
+    if resolved_start_date is not None and resolved_end_date is not None and resolved_start_date > resolved_end_date:
+        raise ValueError(
+            f"start-date ({resolved_start_date.date()}) must be earlier than or equal to end-date ({resolved_end_date.date()}).",
+        )
+
     if cols["date"]:
         df["_date"] = parse_pub_date_series(df[cols["date"]])
         if years_back is not None:
-            cutoff = pd.Timestamp(datetime.today()) - pd.DateOffset(years=years_back)
+            if years_back < 0:
+                raise ValueError("--years-back must be >= 0")
+            cutoff = pd.Timestamp.today().normalize() - pd.DateOffset(years=years_back)
             df = df[df["_date"] >= cutoff]
-        if start_date:
-            df = df[df["_date"] >= pd.to_datetime(start_date)]
-        if end_date:
-            df = df[df["_date"] <= pd.to_datetime(end_date)]
+        if resolved_start_date is not None:
+            df = df[df["_date"] >= resolved_start_date]
+        if resolved_end_date is not None:
+            df = df[df["_date"] <= resolved_end_date]
     else:
         df["_date"] = pd.NaT
 
@@ -375,11 +486,13 @@ def process_pubmed_excel(
     df["_date_ord"] = pd.to_datetime(df["_date"], errors="coerce").map(lambda x: x.toordinal() if pd.notna(x) else 0)
     df["_if_num"] = pd.to_numeric(df[cols["if"]], errors="coerce") if cols["if"] else 0
 
-    if sort_by == "date":
+    if sort_by in {"date", "date_desc"}:
         df = df.sort_values(["_date_ord", "keyword_hits"], ascending=[False, False])
-    elif sort_by == "if":
+    elif sort_by == "date_asc":
+        df = df.sort_values(["_date_ord", "keyword_hits"], ascending=[True, False])
+    elif sort_by in {"if", "if_desc"}:
         df = df.sort_values(["_if_num", "keyword_hits", "_date_ord"], ascending=[False, False, False])
-    elif sort_by == "keyword":
+    elif sort_by in {"keyword", "keyword_desc"}:
         df = df.sort_values(["keyword_hits", "_if_num", "_date_ord"], ascending=[False, False, False])
     else:
         wsum = w_date + w_if + w_keyword
@@ -397,8 +510,8 @@ def process_pubmed_excel(
     query_info = {
         "sort_by": sort_by,
         "years_back": years_back,
-        "start_date": start_date,
-        "end_date": end_date,
+        "start_date": resolved_start_date.strftime("%Y-%m-%d") if resolved_start_date is not None else None,
+        "end_date": resolved_end_date.strftime("%Y-%m-%d") if resolved_end_date is not None else None,
         "min_if": min_if,
         "max_csa_quartile": max_csa_quartile,
         "weights": {"date": w_date, "if": w_if, "keyword": w_keyword},

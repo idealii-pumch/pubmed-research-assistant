@@ -62,7 +62,7 @@
 如果你更喜欢命令行模式，也可以直接用以下语句从头得到你想要的内容
 
 ```powershell
-.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_topic_pipeline.py `
+.\.venv\Scripts\python.exe scripts/pubmed_topic_pipeline.py `
   --topic "mitophagy in septic cardiomyopathy" `
   --query "(mitophagy[Title/Abstract] OR mitochondrial autophagy[Title/Abstract]) AND (septic cardiomyopathy[Title/Abstract] OR sepsis-induced cardiac dysfunction[Title/Abstract])" `
   --keywords "mitophagy,septic cardiomyopathy,cardiac dysfunction" `
@@ -80,17 +80,19 @@
 - 📄 原始抓取结果 `raw xlsx`
 - 📈 筛选、排序后的 `*_ranked.xlsx`
 - 🌐 可阅读的 `*_reading_list.html`
+- 🧾 自动保存并打印的 `*_query_log.txt`
 
 **说明：**
 
 - 🔑 如果环境变量里有 `NCBI_API_KEY` 或 `PUBMED_API_KEY`，脚本会自动读取。
-- 📊 如果没有提供 `--jcr-path`，IF/分区注释会被跳过。
+- 📊 如果没有提供 `--jcr-path`，脚本会先尝试默认路径 `references\JCR_CSA_2025.xlsx`；不存在时才跳过 IF/分区注释。
 - 📁 输出目录默认为 `abstract/`，文件名基于 `--topic` 或查询自动生成。
+- 📁 Path A 会按递归目录保存：`<output-dir>\<run-dir-name>\<timestamp>\`
 
 ### 🔧 2. 对已有 xlsx 做后处理
 
 ```powershell
-.\.venv\Scripts\python.exe .github/skills/pubmed-research-assistant/scripts/pubmed_postprocess.py `
+.\.venv\Scripts\python.exe scripts/pubmed_postprocess.py `
   --input "abstract\example.xlsx" `
   --keywords "mitophagy,sepsis,cardiomyocyte" `
   --output-dir "abstract/mitophagy_sepsis_processed" `
@@ -118,7 +120,7 @@
 
 JCR/CSA 分区表用于添加影响因子和分区信息：
 
-- 🔄 默认情况下，如果未提供 `--jcr-path`，IF/分区注释会被跳过。
+- 🔄 默认情况下，如果未提供 `--jcr-path`，脚本会先尝试 `references\JCR_CSA_2025.xlsx`；不存在时才跳过 IF/分区注释。
 - 📁 你可以提供自己的 JCR 表路径：`--jcr-path "path/to/your/JCR_CSA.xlsx"`
 - 🌍 该表可以公开分享，因为它不包含个人敏感信息。
 
