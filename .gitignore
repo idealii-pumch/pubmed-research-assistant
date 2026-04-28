@@ -1,0 +1,19 @@
+# Ignore everything by default
+/*
+
+# Allow git metadata and ignore file
+!/.gitignore
+!/.git/
+
+# Allow only the pubmed skill subtree
+!/.github/
+/.github/*
+!/.github/skills/
+/.github/skills/*
+!/.github/skills/pubmed-research-assistant/
+!/.github/skills/pubmed-research-assistant/**
+
+# Allow the root JCR CSA Excel reference
+!/references/
+/references/*
+!/references/JCR_CSA_2025.xlsx
