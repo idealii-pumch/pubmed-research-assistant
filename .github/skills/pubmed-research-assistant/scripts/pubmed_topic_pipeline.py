@@ -361,6 +361,17 @@ def main() -> None:
         w_if=args.w_if,
         w_keyword=args.w_keyword,
         top_n=args.top_n,
+        html_summary={
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "query": args.query,
+            "paper_type": args.paper_type,
+            "fetched_total": len(pd.read_csv(raw_csv)),
+            "min_if": args.min_if,
+            "max_csa_quartile": args.max_csa_quartile,
+            "years_back": args.years_back,
+            "start_date": args.start_date,
+            "end_date": args.end_date,
+        },
     )
 
     filtered_csv = ranked_csv.with_name(f"{label}_filtered_ranked.csv")

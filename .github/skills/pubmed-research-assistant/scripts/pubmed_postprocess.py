@@ -219,7 +219,51 @@ def build_highlighter(keywords: list[str]):
     return lambda s: pattern.sub(lambda m: f"<mark class='kw'>{m.group(0)}</mark>", s)
 
 
-def render_html(df: pd.DataFrame, out_html: Path, query_keywords: list[str], query_info: dict, cols: dict):
+def _build_summary(info: dict, df: pd.DataFrame) -> str:
+    blocks: list[str] = []
+
+    if info.get("timestamp"):
+        blocks.append(f"<div class='sum-block'><div class='sum-label'>检索时间</div><div class='sum-value'>{html.escape(info['timestamp'])}</div></div>")
+
+    if info.get("query"):
+        blocks.append(f"<div class='sum-query'>{html.escape(info['query'])}</div>")
+
+    if info.get("paper_type"):
+        blocks.append(f"<div class='sum-block'><div class='sum-label'>文献类型</div><div class='sum-value'>{html.escape(info['paper_type'])}</div></div>")
+
+    if info.get("fetched_total") is not None:
+        blocks.append(f"<div class='sum-block'><div class='sum-label'>检出总数</div><div class='sum-value'>{info['fetched_total']}</div></div>")
+
+    filter_parts = []
+    if info.get("min_if") is not None:
+        filter_parts.append(f"IF ≥ {info['min_if']}")
+    if info.get("max_csa_quartile") is not None:
+        filter_parts.append(f"CSA Q{info['max_csa_quartile']}")
+    if info.get("years_back") is not None:
+        filter_parts.append(f"近 {info['years_back']} 年")
+    if info.get("start_date"):
+        filter_parts.append(f"{info['start_date']} 起")
+    if info.get("end_date"):
+        filter_parts.append(f"至 {info['end_date']}")
+    if filter_parts:
+        blocks.append(f"<div class='sum-block'><div class='sum-label'>筛选条件</div><div class='sum-value'>{', '.join(filter_parts)}</div></div>")
+
+    retained = info.get("retained") if info.get("retained") is not None else len(df)
+    blocks.append(f"<div class='sum-block'><div class='sum-label'>入围篇数</div><div class='sum-value sum-retained'>{retained}</div></div>")
+
+    if not blocks:
+        return ""
+    return f"<div class='summary-panel'>\n  {''.join(blocks)}\n</div>"
+
+
+def render_html(
+    df: pd.DataFrame,
+    out_html: Path,
+    query_keywords: list[str],
+    query_info: dict,
+    cols: dict,
+    summary: dict | None = None,
+):
     highlighter = build_highlighter(query_keywords)
     storage_suffix = re.sub(r"[^a-zA-Z0-9_]", "_", out_html.stem)[:64]
 
@@ -280,6 +324,7 @@ def render_html(df: pd.DataFrame, out_html: Path, query_keywords: list[str], que
   --accent: #0f766e;
   --kw-bg: #fff3a3;
   --kw-text: #5f370e;
+  --summary-bg: #f0fdf9;
 }}
 body[data-theme='dark'] {{
   --bg: #0b1220;
@@ -290,6 +335,7 @@ body[data-theme='dark'] {{
   --accent: #5eead4;
   --kw-bg: #6b21a8;
   --kw-text: #f5d0fe;
+  --summary-bg: #0f1f1a;
 }}
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); transition: background .2s,color .2s,padding-left .2s; padding-left: 290px; }}
@@ -306,6 +352,12 @@ body.sidebar-closed {{ padding-left: 0; }}
 .sidebar-toggle {{ position: fixed; left: 292px; top: 12px; z-index: 30; }}
 .sidebar-toggle.sidebar-hidden {{ left: 12px; }}
 .container {{ max-width: 1080px; margin: 0 auto; padding: 16px; }}
+.summary-panel {{ background: var(--summary-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 14px 32px; }}
+.summary-panel .sum-block {{ min-width: 100px; }}
+.summary-panel .sum-label {{ font-size: .76rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }}
+.summary-panel .sum-value {{ font-size: .93rem; }}
+.summary-panel .sum-query {{ flex-basis: 100%; font-family: monospace; font-size: .8rem; color: var(--muted); background: var(--panel); border-radius: 6px; padding: 8px 12px; max-height: 80px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }}
+.summary-panel .sum-retained {{ color: var(--accent); font-weight: 600; }}
 .paper {{ position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }}
 .paper h3 {{ margin: 0 90px 8px 0; }}
 .paper-actions {{ position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }}
@@ -332,6 +384,7 @@ mark.kw {{ background: var(--kw-bg); color: var(--kw-text); border-radius: 3px; 
   </ul>
 </aside>
 <main class='container'>
+  {_build_summary(summary, df) if summary else ''}
   {''.join(cards)}
 </main>
 <script>
@@ -435,6 +488,7 @@ def process_pubmed_excel(
     w_if: float = 0.3,
     w_keyword: float = 0.3,
     top_n: int = 150,
+    html_summary: dict | None = None,
 ) -> tuple[Path, Path]:
     in_path = Path(input_path).expanduser().resolve()
     if not in_path.exists():
@@ -518,7 +572,7 @@ def process_pubmed_excel(
         "max_csa_quartile": max_csa_quartile,
         "weights": {"date": w_date, "if": w_if, "keyword": w_keyword},
     }
-    render_html(df, out_html, keywords, query_info, cols)
+    render_html(df, out_html, keywords, query_info, cols, summary=html_summary)
     return out_csv, out_html
 
 
