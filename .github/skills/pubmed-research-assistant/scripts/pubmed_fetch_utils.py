@@ -70,7 +70,8 @@ def _build_abstract_text(article_el: ET.Element) -> str:
     parts: list[str] = []
     for item in abstract_el.findall("AbstractText"):
         label = item.attrib.get("Label", "")
-        text = _text_or_empty(item.text)
+        raw = "".join(item.itertext())
+        text = _text_or_empty(raw)
         if label and text:
             parts.append(f"{label}: {text}")
         elif text:
