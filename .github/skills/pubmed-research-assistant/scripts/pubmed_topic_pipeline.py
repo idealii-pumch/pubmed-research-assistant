@@ -101,7 +101,7 @@ def derive_keywords(explicit_keywords: str, topic: str, query: str) -> str:
     if explicit_keywords.strip():
         return explicit_keywords
     if topic.strip():
-        return ",".join(part for part in re.split(r"[;/,]+", topic) if part.strip())
+        return ",".join(part for part in re.split(r"[;/, _-]+", topic) if part.strip())
     candidate_terms = re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", query)
     return ",".join(dict.fromkeys(candidate_terms[:12]))
 
