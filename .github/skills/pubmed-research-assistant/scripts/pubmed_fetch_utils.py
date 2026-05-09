@@ -169,9 +169,10 @@ class PubmedFetcher:
                 if article_el is None:
                     continue
                 title = _text_or_empty(article_el.findtext("ArticleTitle"))
+                journal_abbr = _text_or_empty(article.findtext(".//MedlineJournalInfo/MedlineTA"))
                 journal = _text_or_empty(article_el.findtext("Journal/Title"))
                 if not journal:
-                    journal = _text_or_empty(article.findtext(".//MedlineJournalInfo/MedlineTA"))
+                    journal = journal_abbr
 
                 pub_date = _parse_pub_date(article_el.find("Journal/JournalIssue/PubDate"))
                 abstract = _build_abstract_text(article_el)
@@ -182,6 +183,7 @@ class PubmedFetcher:
                         "PMID": pmid,
                         "Title": title,
                         "Journal": journal,
+                        "Journal_Abbr": journal_abbr,
                         "publish_date": pub_date,
                         "Abstract": abstract,
                         "DOI": doi,
@@ -226,13 +228,17 @@ class PubmedFetcher:
         cas_quartile_list: list[str] = []
 
         for _, row in query_df.iterrows():
+            # 优先用 NLM 缩写匹配 JCR 的 MedAbbr
+            journal_abbr = row.get("Journal_Abbr")
             journal_name = row.get("Journal")
-            if pd.isna(journal_name):
+            journal_key = str(journal_abbr).strip().upper() if pd.notna(journal_abbr) and str(journal_abbr).strip() else ""
+            if not journal_key and pd.notna(journal_name):
+                journal_key = str(journal_name).strip().upper()
+            if not journal_key:
                 jif_list.append("N/A")
                 jif_quartile_list.append("N/A")
                 cas_quartile_list.append("N/A")
                 continue
-            journal_key = str(journal_name).strip().upper()
             if journal_key in jcr_lookup:
                 match_info = jcr_lookup[journal_key]
                 jif_list.append(str(match_info.get("JIF_2024", "N/A")))
