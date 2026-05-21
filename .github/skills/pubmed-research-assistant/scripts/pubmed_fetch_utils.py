@@ -209,14 +209,18 @@ class PubmedFetcher:
 
         jcr_lookup: dict[str, dict[str, str]] = {}
         for _, row in jcr_df.iterrows():
-            med_abbr = row.get("MedAbbr")
-            if pd.notna(med_abbr):
-                key = str(med_abbr).strip().upper()
-                jcr_lookup[key] = {
-                    "JIF_2024": row.get("JIF_2024", "N/A"),
-                    "JIF_Quartile": row.get("JIF_Quartile", "N/A"),
-                    "CAS_Quartile": row.get("CAS_Quartile", "N/A"),
-                }
+            entry = {
+                "JIF_2024": row.get("JIF_2024", "N/A"),
+                "JIF_Quartile": row.get("JIF_Quartile", "N/A"),
+                "CAS_Quartile": row.get("CAS_Quartile", "N/A"),
+            }
+            # 同时用 MedAbbr（缩写）和 JournalTitle（全称）建索引
+            for col in ("MedAbbr", "JournalTitle"):
+                val = row.get(col)
+                if pd.notna(val):
+                    key = str(val).strip().upper()
+                    if key not in jcr_lookup:
+                        jcr_lookup[key] = entry
 
         query_df = pd.read_csv(csv_path)
         cols_to_drop = ["IF", "JCR_Quartile", "CSA_Quartile", "Top", "Open Access"]
