@@ -14,6 +14,9 @@ from typing import Iterable
 import pandas as pd
 
 
+MATERIALS_LIST_DEFAULT = Path(__file__).resolve().parents[1] / "references" / "materials_journals.csv"
+
+
 COL_ALIASES = {
     "title": ["Title", "title"],
     "abstract": ["Abstract", "abstract"],
@@ -53,6 +56,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-if", type=float, default=0.3, help="Weight for IF score in hybrid mode")
     parser.add_argument("--w-keyword", type=float, default=0.3, help="Weight for keyword hit score in hybrid mode")
     parser.add_argument("--top-n", type=int, default=150, help="Max number of records after ranking")
+    parser.add_argument(
+        "--materials-list",
+        default="",
+        help="Optional materials journal list CSV. Default: skill references/materials_journals.csv",
+    )
+    parser.add_argument(
+        "--filter-materials",
+        action="store_true",
+        help="Filter materials journals out of HTML (default: mark only)",
+    )
     return parser.parse_args()
 
 
@@ -81,6 +94,34 @@ def pick_col(df: pd.DataFrame, logical_name: str) -> str | None:
 def parse_keywords(text: str) -> list[str]:
     kws = [k.strip().lower() for k in text.split(",") if k.strip()]
     return list(dict.fromkeys(kws))
+
+
+def normalize_journal_key(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip().upper()
+
+
+def load_materials_journals(path: str | Path | None) -> set[str]:
+    if path:
+        list_path = Path(path).expanduser().resolve()
+    else:
+        list_path = MATERIALS_LIST_DEFAULT
+
+    if not list_path.exists():
+        print(f"Materials journal list not found: {list_path}. Skip marking.")
+        return set()
+
+    df = pd.read_csv(list_path)
+    keys: set[str] = set()
+    for col in ("JournalTitle", "Abbreviation"):
+        if col not in df.columns:
+            continue
+        for value in df[col].dropna().astype(str).tolist():
+            key = normalize_journal_key(value)
+            if key:
+                keys.add(key)
+    return keys
 
 
 def parse_pub_date_series(series: pd.Series) -> pd.Series:
@@ -251,6 +292,12 @@ def _build_summary(info: dict, df: pd.DataFrame) -> str:
     retained = info.get("retained") if info.get("retained") is not None else len(df)
     blocks.append(f"<div class='sum-block'><div class='sum-label'>入围篇数</div><div class='sum-value sum-retained'>{retained}</div></div>")
 
+    if info.get("materials_note"):
+        blocks.append(
+            "<div class='sum-block'><div class='sum-label'>材料期刊处理</div>"
+            f"<div class='sum-value'>{html.escape(info['materials_note'])}</div></div>"
+        )
+
     if not blocks:
         return ""
     return f"<div class='summary-panel'>\n  {''.join(blocks)}\n</div>"
@@ -275,6 +322,7 @@ def render_html(
         abstract_raw = str(row.get(cols["abstract"], ""))
         pmid = str(row.get(cols["pmid"], "")) if cols["pmid"] else ""
         journal = str(row.get(cols["journal"], "")) if cols["journal"] else ""
+        is_materials = bool(row.get("Materials_Journal", False))
         doi = str(row.get(cols["doi"], "")) if cols["doi"] else ""
         pdate = format_date(row.get("_date", ""))
         ifv = row.get(cols["if"], "") if cols["if"] else ""
@@ -292,6 +340,9 @@ def render_html(
         highlighted_abstract = highlighter(safe_abstract)
         link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid and pmid != "nan" else ""
 
+        journal_class = "journal material" if is_materials else "journal"
+        journal_html = f"<span class='{journal_class}'>{html.escape(journal)}</span>"
+
         cards.append(
             f"""
             <article class='paper' id='{article_id}'>
@@ -300,7 +351,7 @@ def render_html(
                 <button class='action-btn read-btn' onclick=\"toggleRead('{article_id}')\" title='已读'>✓</button>
               </div>
               <h3>{rank}. {highlighted_title}</h3>
-              <div class='meta'>Date: {html.escape(pdate)} | IF: {html.escape(str(ifv))} | KeywordHits: {html.escape(str(kw_hits))} | Journal: {html.escape(journal)}</div>
+              <div class='meta'>Date: {html.escape(pdate)} | IF: {html.escape(str(ifv))} | KeywordHits: {html.escape(str(kw_hits))} | Journal: {journal_html}</div>
               <div class='meta'>PMID: <a href='{html.escape(link)}' target='_blank'>{html.escape(pmid)}</a> | DOI: {html.escape(doi)}</div>
               <p>{highlighted_abstract}</p>
             </article>
@@ -369,6 +420,7 @@ body.sidebar-closed {{ padding-left: 0; }}
 p {{ line-height: 1.55; white-space: pre-wrap; }}
 a {{ color: var(--accent); }}
 mark.kw {{ background: var(--kw-bg); color: var(--kw-text); border-radius: 3px; padding: 0 2px; }}
+.journal.material {{ background: #fff3a3; color: #5f370e; border-radius: 4px; padding: 0 4px; }}
 .bookmark-indicators {{ display: inline-flex; min-width: 26px; gap: 2px; }}
 </style>
 </head>
@@ -489,6 +541,8 @@ def process_pubmed_excel(
     w_keyword: float = 0.3,
     top_n: int = 150,
     html_summary: dict | None = None,
+    materials_list: str | Path | None = None,
+    filter_materials: bool = False,
 ) -> tuple[Path, Path]:
     in_path = Path(input_path).expanduser().resolve()
     if not in_path.exists():
@@ -535,6 +589,18 @@ def process_pubmed_excel(
         df = df[pd.to_numeric(df[cols["quartile"]], errors="coerce") <= max_csa_quartile]
 
     df = df.copy()
+
+    materials_keys = load_materials_journals(materials_list)
+    journal_abbr_col = "Journal_Abbr" if "Journal_Abbr" in df.columns else None
+    if materials_keys and cols["journal"]:
+        df["Materials_Journal"] = df.apply(
+            lambda r: normalize_journal_key(r.get(cols["journal"])) in materials_keys
+            or (normalize_journal_key(r.get(journal_abbr_col)) in materials_keys if journal_abbr_col else False),
+            axis=1,
+        )
+    else:
+        df["Materials_Journal"] = False
+
     df["title_keyword_hits"] = df[cols["title"]].astype(str).map(lambda t: count_hits(t, keywords))
     df["abstract_keyword_hits"] = df[cols["abstract"]].astype(str).map(lambda t: count_hits(t, keywords))
     df["keyword_hits"] = df["title_keyword_hits"] + df["abstract_keyword_hits"]
@@ -563,6 +629,13 @@ def process_pubmed_excel(
 
     df.to_csv(out_csv, index=False)
 
+    df_html = df
+    if filter_materials:
+        df_html = df[df["Materials_Journal"] == False]
+
+    materials_total = int(df["Materials_Journal"].sum())
+    materials_note = f"标记 {materials_total} 篇；过滤: {'是' if filter_materials else '否'}"
+
     query_info = {
         "sort_by": sort_by,
         "years_back": years_back,
@@ -572,7 +645,10 @@ def process_pubmed_excel(
         "max_csa_quartile": max_csa_quartile,
         "weights": {"date": w_date, "if": w_if, "keyword": w_keyword},
     }
-    render_html(df, out_html, keywords, query_info, cols, summary=html_summary)
+    summary_payload = dict(html_summary or {})
+    summary_payload["retained"] = len(df_html)
+    summary_payload["materials_note"] = materials_note
+    render_html(df_html, out_html, keywords, query_info, cols, summary=summary_payload)
     return out_csv, out_html
 
 
@@ -592,6 +668,8 @@ def main() -> None:
         w_if=args.w_if,
         w_keyword=args.w_keyword,
         top_n=args.top_n,
+        materials_list=args.materials_list,
+        filter_materials=args.filter_materials,
     )
     print(f"Saved ranked csv: {out_csv}")
     print(f"Saved html: {out_html}")

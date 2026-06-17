@@ -17,3 +17,9 @@
 !/references/
 /references/*
 !/references/JCR_CSA_2025.xlsx
+
+# Allow SKILL protocol files at root
+!/Promoter-validation.SKILL.md
+
+# Protect the plan directory (experimental protocols) — completely untracked
+/plan/

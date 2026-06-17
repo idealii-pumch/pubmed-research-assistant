@@ -56,6 +56,8 @@ Confirm these items in one compact block before running anything:
 - date ascending
 - keyword hits descending
 - IF descending
+11. Materials journal handling: mark only (default) or filter in HTML
+12. Confirm the sorting and filtering logic in one sentence (e.g., date-desc + keyword tie-break; IF threshold; years-back)
 
 If the user has no preference, use these defaults:
 - output directory: `abstract/`
@@ -88,8 +90,12 @@ Use the pipeline script when the user wants the full workflow without first prod
   --max-csa-quartile 1 `
   --min-if 10 `
   --jcr-path "path/to/JCR_CSA_2025.csv" `
-  --sort-by if_desc
+  --sort-by if_desc `
+  --filter-materials
 ```
+
+Materials journal list default path:
+- `.github\skills\pubmed-research-assistant\references\materials_journals.csv`
 
 If JCR path is not provided, try default `.github\skills\pubmed-research-assistant\references\JCR_CSA_2025.csv` first; if unavailable, IF/quartile annotation will be skipped.
 
@@ -98,6 +104,12 @@ Path A output contract:
 - table 1: raw query result csv, unfiltered
 - table 2: filtered and ranked csv
 - plus one HTML reading list
+
+Materials journal handling:
+- Adds `Materials_Journal` column to CSV outputs.
+- Default behavior: mark only and highlight journal names in HTML with yellow background.
+- If `--filter-materials` is set, materials journals are excluded from HTML output.
+- HTML summary always states whether materials journals were marked and/or filtered.
 
 ### Path B: Start From An Existing PubMed CSV File
 Use the post-process script when the retrieval step already exists and only filtering, ranking, or HTML export is needed.
@@ -110,7 +122,8 @@ Use the post-process script when the retrieval step already exists and only filt
   --years-back 10 `
   --max-csa-quartile 1 `
   --min-if 10 `
-  --sort-by keyword_desc
+  --sort-by keyword_desc `
+  --filter-materials
 ```
 
 If the input file does not exist, the script will fail with a clear error message.

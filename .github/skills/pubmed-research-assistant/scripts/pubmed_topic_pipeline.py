@@ -74,6 +74,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w-keyword", type=float, default=0.3, help="Weight for keyword hit score in hybrid mode")
     parser.add_argument("--top-n", type=int, default=150, help="Maximum number of ranked papers to keep")
     parser.add_argument(
+        "--materials-list",
+        default="",
+        help="Optional materials journal list CSV. Default: skill references/materials_journals.csv",
+    )
+    parser.add_argument(
+        "--filter-materials",
+        action="store_true",
+        help="Filter materials journals out of HTML (default: mark only)",
+    )
+    parser.add_argument(
         "--warn-count-threshold",
         type=int,
         default=200,
@@ -361,6 +371,8 @@ def main() -> None:
         w_if=args.w_if,
         w_keyword=args.w_keyword,
         top_n=args.top_n,
+        materials_list=args.materials_list or None,
+        filter_materials=args.filter_materials,
         html_summary={
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "query": args.query,
