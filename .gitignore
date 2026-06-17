@@ -21,5 +21,8 @@
 # Allow SKILL protocol files at root
 !/Promoter-validation.SKILL.md
 
+# Allow project-wide formatting specs
+!/REFERENCE-FORMAT.md
+
 # Protect the plan directory (experimental protocols) — completely untracked
 /plan/
