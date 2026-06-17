@@ -56,8 +56,16 @@ Method: UCSC Genome Browser → View → DNA
 import re
 
 # 寻找 HRE 基序 (适用于 HIF 家族)
-# 通用转录因子结合基序 GCGTG / CACGTG / RCGTG 等
+# HIF-1α/ARNT 经典结合基序: 5'-RCGTG-3' (R = A 或 G)
+#   GCGTG = 经典 HRE（HIF-1 特异性更高）
+#   ACGTG = 也可结合 HIF-1，但上下语境会影响
+# CACGTG = 需特别注意：
+#   - 既是 HRE (含 ACGTG 核心) 
+#   - 也是经典 E-box (CANNTG)，可被 USF1/2、MYC/MAX 结合
+#   - 在 BNIP3 启动子中被证实为重叠 HRE/E-box (Hu 2011 Mol Cancer Res)
+#   - 解释时需考虑 USF 竞争结合的混杂因素
 hre_motifs = re.finditer('[AG]CGTG', sequence)
+cacgtg_motifs = re.finditer('CACGTG', sequence)  # E-box 特异性
 
 # 反向链基因注意事项：
 # 若基因在 minus strand，TSS 在 plus strand 坐标中为基因体起点
@@ -155,16 +163,31 @@ GC 含量 >65% 时必须采取以下措施：
 
 ### 2.5 突变对照
 
-构建结合基序突变体以证明序列特异性：
+构建结合基序突变体以证明序列特异性。
+
+**重要：区分 HRE 与 E-box**
+
+| 基序 | 结合因子 | 突变影响 |
+|------|---------|---------|
+| **GCGTG** (经典 HRE) | HIF-1α/ARNT 特异性 | 突变 → 丧失 HIF-1 结合 |
+| **ACGTG** | HIF-1α/ARNT 结合 | 突变 → 丧失 HIF-1 结合 |
+| **CACGTG** (E-box/HRE 重叠) | **HIF-1α + USF1/2** | 突变 → 同时丧失 HIF 和 USF 结合，解读需谨慎 |
+
+**推荐突变策略：**
 
 ```python
-# 示例：CACGTG → CAAAG (破坏 HIF-1 结合)
-模板序列：...GTGTGG CACGTG CGGCGCG...
-突变序列：...GTGTGG CAAAG  CGGCGCG...
+# 策略 A (推荐)：突变 GCGTG 经典 HRE，保留 CACGTG E-box
+# 特异性检测 HIF-1α 经 HRE 的转录调控
+GCGTG → GAATG  # CGTG → AATG, 3bp替换破坏结合
+# 靶向 -99, -111, -120, -138 (针对 BNIP3 近端 HRE 簇)
+
+# 策略 B (可选)：突变 CACGTG 重叠位点
+CACGTG → CAAAG  # 破坏 HIF 和 USF 共同结合
+# 需同时运行 GCGTG mut 以区分效应来源
 ```
 
 方法选择：
-- **重叠延伸 PCR** (Overlap Extension PCR)：两轮 PCR，最经济
+- **重叠延伸 PCR** (Overlap Extension PCR)：多轮 PCR，最经济
 - **Q5 Site-Directed Mutagenesis Kit** (NEB E0554)：简便快速
 - **Gibson Assembly** (NEB E2611)：多片段同时拼接
 
@@ -237,7 +260,13 @@ GC 含量 >65% 时必须采取以下措施：
 - 反向链基因的 promoter 在 plus strand 上位于 TSS 的**高坐标方向**
 - 报告载体插入方向必须反转（Fwd = 高坐标端）
 
-### 3. 启动子无基础活性
+### 4. CACGTG 是 E-box 不是 HRE？
+- **CACGTG** 是经典 E-box（CANNTG），被 **USF1/2、MYC/MAX** 等 bHLH 因子识别
+- 但它同时包含 **ACGTG**（RCGTG 核心），也可结合 HIF-1α/ARNT
+- 在 BNIP3 启动子中被证实为**重叠 HRE/E-box**（Hu 2011, Mol Cancer Res）
+- 对策：报告中应**同时构建 GCGTG (纯 HRE) 突变**作为对照，区分 HIF 和 USF 各自的贡献
+
+### 5. 启动子无基础活性
 - 可能是缺失了核心启动子元件（TATA box, Inr, DPE）
 - 考虑延长片段覆盖更多远端调控区
 - 检查转录因子是否在目标细胞中表达
@@ -254,8 +283,10 @@ GC 含量 >65% 时必须采取以下措施：
 1. Bruick RK (2000) *PNAS* **97**:9082–9087 — BNIP3 promoter HRE 鉴定, HRE1/HRE2 突变
 2. Sowter HM et al. (2001) *Cancer Res* **61**:6669–6673 — BNIP3/NIX 的 HIF-1 依赖性调控
 3. Tracy K et al. (2007) *Mol Cell Biol* **27**:6229–6242 — BNIP3 promoter RB/E2F 和 HIF 双重调控
-4. Carey MF et al. (2009) *Nat Protoc* — ChIP-qPCR 实验步骤
-5. Shlyueva D et al. (2014) *Nat Rev Genet* — Enhancer reporter assays
+4. Hu J et al. (2011) *Mol Cancer Res* **9**:1520–1536 — HRE/E-box 重叠位点、HIF/USF 竞争机制
+5. Liu X et al. (2018) *J Biol Chem* **293**:14669–14677 — BNIP3 功能 HRE 鉴定与突变
+6. Carey MF et al. (2009) *Nat Protoc* — ChIP-qPCR 实验步骤
+7. Shlyueva D et al. (2014) *Nat Rev Genet* — Enhancer reporter assays
 
 ---
 
